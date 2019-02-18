@@ -1,14 +1,14 @@
 import { Action, Wait, Dance, Planner, TimeAction } from './goap';
-import { v2, Vec2, sum, clampLength, scalarMultiply, zero, magnitude, unit } from './math/v2'
+import { v2, Vec2, sum, clampLength, scalarMultiply, zero, distance } from './math/v2'
 import { clamp } from './math/util';
 
 export interface Static {
-  position: Vec2
-  dimensions: Vec2
-  center: Vec2
-  draw(c: CanvasRenderingContext2D): void
+  position: Vec2 // Position of static
+  dimensions: Vec2 // x: width, y: height
+  center: Vec2 // Center getter
+  draw(c: CanvasRenderingContext2D, world: World): void
   update(delta: number, world: World): void
-  tag?: string
+  tag?: string // Helps find this kind of object
 }
 
 export interface Mob extends Static {
@@ -16,7 +16,7 @@ export interface Mob extends Static {
   acceleration: Vec2
   maxVelocity: number
   maxAcceleration: number
-  state: { [index: string]: any }
+  state: { [index: string]: any } // Just a place to throw data. Would be more structured if this wasn't a test
 }
 
 export interface Living extends Mob {
@@ -133,7 +133,7 @@ export class Person implements Living {
   }
 
   private live () {
-    const speed = 2
+    const speed = 5
     this.addHunger(-2 * speed)
     this.addThirst(-5 * speed)
     this.addFatigue(-4 * speed)
@@ -150,6 +150,11 @@ export class Person implements Living {
       }
 
       this.selectedAction = this.actions.shift()
+      if (this.selectedAction.verify && !this.selectedAction.verify(world, this)) {
+        console.log('discarding action')
+        this.actions = this.planner.getPlan('survive', world, this)
+        this.selectedAction = this.actions.shift()
+      }
       this.selectedAction.init && this.selectedAction.init(world, this)
     }
   }
@@ -174,45 +179,48 @@ export class Person implements Living {
     return sum(this.position, scalarMultiply(this.dimensions, 0.5))
   }
 
-  public draw (c: CanvasRenderingContext2D) {
+  public draw (c: CanvasRenderingContext2D, world: World) {
     c.fillStyle = this.color
     c.strokeStyle = '#DDD'
     c.lineWidth = 3
     c.beginPath()
-    c.arc(this.position.x + this.dimensions.x / 2, this.position.y + this.dimensions.y / 2, this.dimensions.x / 2, 0, 2 * Math.PI)
+    c.arc(this.position.x, this.position.y, this.dimensions.x / 2, 0, 2 * Math.PI)
     c.fill()
     c.stroke()
-    if (this.selectedAction) {
-      c.fillStyle = '#333'
-      c.font = `16px sans-serif`
-      c.textBaseline = 'middle'
-      const text = this.selectedAction.label()
-      const textWidth = c.measureText(text).width
-      c.fillText(text, this.position.x - (textWidth / 2), this.position.y - 20)
-      if ((<TimeAction>this.selectedAction).duration) {
-        const duration = (<TimeAction>this.selectedAction).duration
-        const timeElapsed = this.state.timeElapsed
-        c.fillStyle = 'red'
-        const width = 100
-        const height = 10
-        c.fillRect(this.position.x - width / 2, this.position.y - height - 2, width, height)
-        c.fillStyle = 'green'
-        c.fillRect(this.position.x - width / 2, this.position.y - height - 2, width * (timeElapsed / duration), height)
+    const isHover = distance(this.position, world.mouse) <= this.dimensions.x
+    if (isHover) {
+      if (this.selectedAction) {
+        c.fillStyle = '#333'
+        c.font = `16px sans-serif`
+        c.textBaseline = 'middle'
+        const text = this.selectedAction.label()
+        const textWidth = c.measureText(text).width
+        c.fillText(text, this.position.x - (textWidth / 2), this.position.y - 25)
+        if ((<TimeAction>this.selectedAction).duration) {
+          const duration = (<TimeAction>this.selectedAction).duration
+          const timeElapsed = this.state.timeElapsed
+          c.fillStyle = 'red'
+          const width = 100
+          const height = 10
+          c.fillRect(this.position.x - width / 2, this.position.y - height - 12, width, height)
+          c.fillStyle = 'green'
+          c.fillRect(this.position.x - width / 2, this.position.y - height - 12, width * (timeElapsed / duration), height)
+        }
       }
+      const { fatigue = 0, hunger = 0, thirst = 0 } = this.state
+      const maxValue = 100000
+      const width = 100
+      const height = 10
+      const offset = 20
+      c.fillStyle = '#EEE'
+      c.fillRect(this.position.x - width / 2, this.position.y + height + offset, width, height)
+      c.fillStyle = 'green'
+      c.fillRect(this.position.x - width / 2 + (width / 3) * 0, this.position.y + height + offset, (width / 3) * (hunger / maxValue), height)
+      c.fillStyle = 'blue'
+      c.fillRect(this.position.x - width / 2 + (width / 3) * 1, this.position.y + height + offset, (width / 3) * (thirst / maxValue), height)
+      c.fillStyle = 'yellow'
+      c.fillRect(this.position.x - width / 2 + (width / 3) * 2, this.position.y + height + offset, (width / 3) * (fatigue / maxValue), height)
     }
-    const { fatigue = 0, hunger = 0, thirst = 0 } = this.state
-    const maxValue = 100000
-    const width = 100
-    const height = 10
-    const offset = 20
-    c.fillStyle = '#EEE'
-    c.fillRect(this.position.x - width / 2, this.position.y + height + offset, width, height)
-    c.fillStyle = 'green'
-    c.fillRect(this.position.x - width / 2 + (width / 3) * 0, this.position.y + height + offset, (width / 3) * (hunger / maxValue), height)
-    c.fillStyle = 'blue'
-    c.fillRect(this.position.x - width / 2 + (width / 3) * 1, this.position.y + height + offset, (width / 3) * (thirst / maxValue), height)
-    c.fillStyle = 'yellow'
-    c.fillRect(this.position.x - width / 2 + (width / 3) * 2, this.position.y + height + offset, (width / 3) * (fatigue / maxValue), height)
   }
 }
 
@@ -253,23 +261,27 @@ export class World {
   }
 
   onClick () {
+    const {x, y} = this.mouse
     const box2 = new LabeledStatic({
-      position: v2(400, 400),
-      dimensions: v2(100, 100),
-      fontSize: 20,
-      name: 'Water Bottle',
+      position: v2(x, y),
+      dimensions: v2(10, 20),
+      fontSize: 10,
+      textColor: 'white',
+      bgColor: 'blue',
+      name: '',
       tag: 'water-pickup'
     })
+    this.pushObj(box2)
   }
 
   draw () {
     this.c.clearRect(0, 0, this.width, this.height)
     for(let obj of this.objs) {
-      obj.draw(this.c)
+      obj.draw(this.c, this)
     }
 
     for(let mob of this.mobs) {
-      mob.draw(this.c)
+      mob.draw(this.c, this)
     }
   }
 

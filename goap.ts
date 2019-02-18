@@ -7,6 +7,7 @@ export interface Action {
   preconditions: string[]
   label(): string
   shouldDo(world: World, actor: Mob): boolean
+  verify?(world: World, actor: Mob): boolean
   init?(world: World, actor: Mob): void
   condition?(world: World, actor: Mob): boolean
   cost(world: World, actor: Mob): number
@@ -17,6 +18,8 @@ export interface Action {
 export interface TimeAction extends Action {
   duration: number
 }
+
+export type MobSideEffect = (world: World, mob: Mob) => void
 
 export class EmptyRootAction implements Action {
   public goal = '-'
@@ -42,6 +45,7 @@ export class MoveTo implements Action {
   public preconditions: string[] = []
   protected position: Vec2
   protected radius: number = 100
+  protected minDistance: number = 5
   constructor(pt: Vec2) {
     this.position = pt
   }
@@ -51,17 +55,17 @@ export class MoveTo implements Action {
   }
 
   cost(world: World, actor: Mob) {
-    return Math.floor(distance(this.position, actor.center) / actor.maxVelocity)
+    return Math.floor(distance(this.position, actor.center) / (actor.maxVelocity * 60))
   }
 
   shouldDo(world: World, actor: Mob) {
     const dist = distance(this.position, actor.center)
-    return !(dist < 0.5)
+    return !(dist < this.minDistance)
   }
 
   update(world: World, actor: Mob): boolean {
     const dist = distance(this.position, actor.center)
-    if (dist < 0.5) {
+    if (dist < this.minDistance) {
       actor.acceleration = zero()
       actor.velocity = zero()
       return true
@@ -346,7 +350,7 @@ export class Relax extends Wait {
   }
 
   cost (world: World, mob: Living) {
-    return 50
+    return 70 + rand(-4, 10)
   }
 
   label () {
@@ -354,17 +358,90 @@ export class Relax extends Wait {
   }
 }
 
+export class Explore extends MoveTo {
+  public goal: string = 'survive'
+  public preconditions: string[] = []
+  constructor (public range: number = 400) {
+    super(zero())
+  }
+
+  cost (world: World, actor: Mob) {
+    actor.state.exploreCoordinate = sum(v2(rand(-this.range, this.range), rand(-this.range, this.range)), actor.center)
+    this.position = actor.state.exploreCoordinate
+    const totalCost = super.cost(world, actor)
+    return (totalCost * 40) + rand(5, 30)
+  }
+
+  update (world: World, actor: Mob) {
+    this.position = actor.state.exploreCoordinate
+    return super.update(world, actor)
+  }
+
+  label () {
+    return 'Exploring'
+  }
+}
+
+export class PickupItem extends MoveTo {
+  public goal: string = 'survive'
+  public preconditions: string[] = []
+  protected itemTag: string
+  constructor (public tag: string, public pickupEffect: MobSideEffect = () => {}) {
+    super(zero())
+    this.itemTag = `${tag}-pickup`
+    this.goal = `has-${tag}`
+  }
+
+  cost (world: World, actor: Mob) {
+    const itemsWithTag = world.objs.filter(obj => obj.tag === this.itemTag)
+    if (itemsWithTag.length < 1) return Infinity
+    let closestItem = null
+    let closestItemDistance = Infinity
+    for (let item of itemsWithTag) {
+      const newDist = distance(item.center, actor.center)
+      if (newDist < closestItemDistance) {
+        closestItem = item
+        closestItemDistance = newDist
+      }
+    }
+    actor.state.pickupItem = closestItem
+    this.position = closestItem.center
+    return super.cost(world, actor)
+  }
+
+  update (world: World, actor: Mob) {
+    const itemIndex = world.objs.indexOf(actor.state.pickupItem)
+    const itemStillExist = itemIndex >= 0
+    if (!itemStillExist) return true
+    this.position = actor.state.pickupItem.center
+    const isOnItem = super.update(world, actor)
+    if (isOnItem) {
+      world.objs.splice(itemIndex, 1)
+      this.pickupEffect(world, actor)
+    }
+    return isOnItem
+  }
+
+  label () {
+    return `Picking up ${this.tag}`
+  }
+}
+
 export class ConsumeItem extends Wait {
   public goal: string
   public preconditions: string[]
   private item: string
-  private effect: (world: World, mob: Mob) => void
-  constructor (seconds: number = 10, item: string, effect: (world: World, mob: Mob) => void = () => {}) {
+  private effect: MobSideEffect
+  constructor (seconds: number = 10, item: string, effect: MobSideEffect = () => {}) {
     super(seconds)
     this.goal = `consume-${item}`
     this.preconditions = [`has-${item}`]
     this.item = item
     this.effect = effect
+  }
+
+  verify (world: World, actor: Mob) {
+    return actor.state[this.item] && actor.state[this.item] >= 1
   }
 
   label () {
@@ -426,6 +503,7 @@ class Node {
       const goalHash: {[index: string]: number} = {}
       for (let child of this.children) {
         child.updateCost(world, actor)
+        if (child.cost === Infinity) break
         totalChildCost += child.cost
         if (!goalHash[child.goal]) {
           goalHash[child.goal] = child.cost
@@ -512,8 +590,8 @@ export class GOAPPlanner implements Planner {
       }
     }
     const plan = lowestAction.getLowestCostChildren(world, actor).map(node => node.action)
-    console.log(plan)
-    console.log(graph)
+    // console.log(plan)
+    // console.log(graph)
     return plan
   }
 }

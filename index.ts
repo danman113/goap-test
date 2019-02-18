@@ -35,7 +35,7 @@ const stall = new LabeledStatic({
   position: v2(400, 100),
   dimensions: v2(100, 100),
   fontSize: 20,
-  name: 'General Stall',
+  name: 'Store',
   tag: 'sell'
 })
 
@@ -49,12 +49,17 @@ const planner = new actions.GOAPPlanner([
   new actions.SellWater(5),
   new actions.EatDirt(),
   new actions.ConsumeItem(5, 'food', (world: World, mob: Living) => mob.addHunger(50000)),
-  new actions.ConsumeItem(1, 'water', (world: World, mob: Living) => mob.addThirst(100000)),
+  new actions.ConsumeItem(10, 'water', (world: World, mob: Living) => mob.addThirst(100000)),
   new actions.Sleep(10),
   new actions.NeedsWater(),
   new actions.NeedsFood(),
   new actions.NeedsSleep(),
   new actions.Relax(),
+  new actions.Explore(),
+  new actions.PickupItem('water', (world, actor: Living) => {
+    console.log('added water to ', (<any>actor).name)
+    actor.state.water = (actor.state.water || 0) + 1
+  })
 ])
 
 const bo = new Person({
@@ -66,20 +71,17 @@ const bo = new Person({
 
 bo.state.money = 1
 
-const cotton = new Person({
-  position: v2(rand(1, 10000), rand(1, 10000)),
-  color: 'red',
-  name: 'Cotton',
-  planner
-})
-
 world.pushObj(box, box2, bed, stall)
-world.pushMob(bo, cotton)
+world.pushMob(bo)
 
-for(let i = 0; i < 20; i++) {
+for(let i = 0; i < 100; i++) {
+  const r = rand(0, 255)
+  const g = rand(0, 255)
+  const b = rand(0, 255)
+  const randomColor = `rgba(${r}, ${g}, ${b})`
   const cotton = new Person({
-    position: v2(rand(-3000, 3000), rand(-3000, 3000)),
-    color: 'red',
+    position: v2(rand(-2000, 2000), rand(-2000, 2000)),
+    color: randomColor,
     name: `Bot + ${i}`,
     planner
   })
