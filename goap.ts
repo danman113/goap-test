@@ -1,6 +1,6 @@
-import { rand } from './math/random';
+import { rand } from './math/util';
 import { Vec2, distance, clampLength, sub, scalarMultiply, sum, zero, v2, unit, magnitude, degToRad } from './math/v2';
-import { World, Mob, Static, LabeledStatic } from './entity';
+import { World, Mob, Static, LabeledStatic, Living } from './entity';
 
 export interface Action {
   goal: string
@@ -18,6 +18,25 @@ export interface TimeAction extends Action {
   duration: number
 }
 
+export class EmptyRootAction implements Action {
+  public goal = '-'
+  public preconditions: string[]  = []
+  cost (world: World, mob: Mob) {
+    return 0
+  }
+
+  shouldDo(world: World, mob: Mob) {
+    return true
+  }
+
+  label () {
+    return this.goal
+  }
+
+  update (world: World, mob: Mob) {
+    return true
+  }
+}
 export class MoveTo implements Action {
   public goal: string = 'move-to'
   public preconditions: string[] = []
@@ -176,7 +195,7 @@ export class Wait implements TimeAction {
     this.duration = seconds * 60
   }
 
-  cost () {
+  cost (world: World, mob: Mob) {
     return this.seconds
   }
 
@@ -280,25 +299,58 @@ export class Sleep extends Wait {
     return 'Sleeping...'
   }
 
-  done(world: World, actor: Mob) {
+  done(world: World, actor: Living) {
     super.done(world, actor)
+    actor.addFatigue(70000)
   }
 }
 
-export class Survive extends Wait {
+export class NeedsFood extends EmptyRootAction {
   public goal: string = 'survive'
-  public preconditions: string[] = ['consume-food', 'consume-water', 'consume-sleep']
+  public preconditions: string[] = ['consume-food']
 
-  constructor (seconds: number = 20) {
-    super(seconds)
+  cost (world: World, mob: Living) {
+    const { hunger } = mob.state
+    const factor = hunger / 10000
+    return factor + factor * factor
+  }
+}
+
+export class NeedsWater extends EmptyRootAction {
+  public goal: string = 'survive'
+  public preconditions: string[] = ['consume-water']
+
+  cost (world: World, mob: Living) {
+    const { thirst } = mob.state
+    const factor = thirst / 10000
+    return factor + factor * factor
+  }
+}
+
+export class NeedsSleep extends EmptyRootAction {
+  public goal: string = 'survive'
+  public preconditions: string[] = ['consume-sleep']
+
+  cost (world: World, mob: Living) {
+    const { fatigue } = mob.state
+    const factor = fatigue / 10000
+    return factor + (factor * factor) * 2
+  }
+}
+
+export class Relax extends Wait {
+  public goal: string = 'survive'
+  public preconditions: string[] = []
+  constructor (seconds: number = 5) {
+    super(5)
+  }
+
+  cost (world: World, mob: Living) {
+    return 50
   }
 
   label () {
     return 'Relaxing...'
-  }
-
-  done(world: World, actor: Mob) {
-    super.done(world, actor)
   }
 }
 
@@ -306,11 +358,13 @@ export class ConsumeItem extends Wait {
   public goal: string
   public preconditions: string[]
   private item: string
-  constructor (seconds: number = 10, item: string) {
+  private effect: (world: World, mob: Mob) => void
+  constructor (seconds: number = 10, item: string, effect: (world: World, mob: Mob) => void = () => {}) {
     super(seconds)
     this.goal = `consume-${item}`
     this.preconditions = [`has-${item}`]
     this.item = item
+    this.effect = effect
   }
 
   label () {
@@ -320,6 +374,7 @@ export class ConsumeItem extends Wait {
   done(world: World, actor: Mob) {
     super.done(world, actor)
     actor.state[this.item] = actor.state[this.item] - 1
+    this.effect(world, actor)
   }
 }
 
@@ -346,26 +401,6 @@ export class EatDirt extends Wait {
 
   shouldDo(world: World, actor: Mob) {
     return (actor.state.food || 0) < 1
-  }
-}
-
-export class EmptyRootAction implements Action {
-  public goal = '-'
-  public preconditions: string[]  = []
-  cost () {
-    return 0
-  }
-
-  shouldDo() {
-    return true
-  }
-
-  label () {
-    return this.goal
-  }
-
-  update () {
-    return true
   }
 }
 
@@ -419,7 +454,6 @@ class Node {
       }
       childrenNoDupes.forEach(child => {
         if (child.action.shouldDo(world, actor)) instructions.push(...child.getLowestCostChildren(world, actor))
-        else console.log('ignoring\n', child)
       })
     }
     instructions.push(this)
@@ -479,6 +513,7 @@ export class GOAPPlanner implements Planner {
     }
     const plan = lowestAction.getLowestCostChildren(world, actor).map(node => node.action)
     console.log(plan)
+    console.log(graph)
     return plan
   }
 }

@@ -1,0 +1,2 @@
+export const rand = (min: number, max: number): number => Math.floor(Math.random() * (max - min)) + min
+export const clamp = (n: number, min: number, max: number): number => Math.max(min, Math.min(max, n))

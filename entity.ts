@@ -1,5 +1,6 @@
 import { Action, Wait, Dance, Planner, TimeAction } from './goap';
 import { v2, Vec2, sum, clampLength, scalarMultiply, zero, magnitude, unit } from './math/v2'
+import { clamp } from './math/util';
 
 export interface Static {
   position: Vec2
@@ -16,6 +17,12 @@ export interface Mob extends Static {
   maxVelocity: number
   maxAcceleration: number
   state: { [index: string]: any }
+}
+
+export interface Living extends Mob {
+  addHunger(n: number): void
+  addThirst(n: number): void
+  addFatigue(n: number): void
 }
 
 export class LabeledStatic implements Static {
@@ -72,7 +79,7 @@ export class LabeledStatic implements Static {
 }
 
 
-export class Person implements Mob {
+export class Person implements Living {
   public name: string
   public color: string
   public position: Vec2
@@ -83,9 +90,13 @@ export class Person implements Mob {
   public maxAcceleration: number = 0.1
   public planner: Planner
   public tag: string = 'actor'
-  public state: { [index: string]: any } = {}
+  public state: { [index: string]: any } = {
+    hunger: 100000,
+    thirst: 100000,
+    fatigue: 100000
+  }
+
   private selectedAction: Action = null
-  private lastAction: Action = null
   public actions: Action[] = []
   constructor ({
     name = '',
@@ -109,6 +120,25 @@ export class Person implements Mob {
     this.planner = planner
   }
 
+  public addHunger (n: number) {
+    this.state.hunger = clamp(this.state.hunger + n, 0, 100000)
+  }
+
+  public addThirst (n: number) {
+    this.state.thirst = clamp(this.state.thirst + n, 0, 100000)
+  }
+
+  public addFatigue (n: number) {
+    this.state.fatigue = clamp(this.state.fatigue + n, 0, 100000)
+  }
+
+  private live () {
+    const speed = 2
+    this.addHunger(-2 * speed)
+    this.addThirst(-5 * speed)
+    this.addFatigue(-4 * speed)
+  }
+
   private selectAction (world: World) {
     if (this.selectedAction === null) {
       if (this.actions.length < 1) {
@@ -128,12 +158,12 @@ export class Person implements Mob {
     this.selectAction(world)
     if(this.selectedAction.update(world, this)) {
       if (this.selectedAction.done) this.selectedAction.done(world, this)
-      this.lastAction = this.selectedAction
       this.selectedAction = null
     }
   }
 
   public update (delta: number, world: World) {
+    this.live()
     this.doAction(world)
     this.velocity = sum(this.velocity, this.acceleration)
     this.velocity = clampLength(this.velocity, this.maxVelocity)
@@ -170,6 +200,19 @@ export class Person implements Mob {
         c.fillRect(this.position.x - width / 2, this.position.y - height - 2, width * (timeElapsed / duration), height)
       }
     }
+    const { fatigue = 0, hunger = 0, thirst = 0 } = this.state
+    const maxValue = 100000
+    const width = 100
+    const height = 10
+    const offset = 20
+    c.fillStyle = '#EEE'
+    c.fillRect(this.position.x - width / 2, this.position.y + height + offset, width, height)
+    c.fillStyle = 'green'
+    c.fillRect(this.position.x - width / 2 + (width / 3) * 0, this.position.y + height + offset, (width / 3) * (hunger / maxValue), height)
+    c.fillStyle = 'blue'
+    c.fillRect(this.position.x - width / 2 + (width / 3) * 1, this.position.y + height + offset, (width / 3) * (thirst / maxValue), height)
+    c.fillStyle = 'yellow'
+    c.fillRect(this.position.x - width / 2 + (width / 3) * 2, this.position.y + height + offset, (width / 3) * (fatigue / maxValue), height)
   }
 }
 
@@ -201,7 +244,22 @@ export class World {
         this.mouse.y = (e.layerY - box.top)
       }
     })
+
+    canvas.addEventListener('click', e => {
+      this.onClick()
+    })
+
     this.run = this.run.bind(this)
+  }
+
+  onClick () {
+    const box2 = new LabeledStatic({
+      position: v2(400, 400),
+      dimensions: v2(100, 100),
+      fontSize: 20,
+      name: 'Water Bottle',
+      tag: 'water-pickup'
+    })
   }
 
   draw () {
