@@ -3,18 +3,18 @@ import { Vec2, distance, clampLength, sub, scalarMultiply, sum, zero, v2, unit, 
 import { World, Mob, Static, LabeledStatic, Living } from './entity';
 
 export interface Action {
-  goal: string
-  preconditions: string[]
-  label(): string
-  shouldDo(world: World, actor: Mob): boolean
-  verify?(world: World, actor: Mob): boolean
-  init?(world: World, actor: Mob): void
-  condition?(world: World, actor: Mob): boolean
-  cost(world: World, actor: Mob): number
-  update(world: World, actor: Mob): boolean
-  done?(world: World, actor: Mob): void
+  goal: string // Also works as the `effect`. It's what this action will accomplish
+  preconditions: string[] // Actions with goals must be performed before this action run
+  label(): string // This is just a dynamic string
+  shouldDo(world: World, actor: Mob): boolean // This will dynamically exclude the action from being put in a plan
+  verify?(world: World, actor: Mob): boolean // See entity.ts L152 to see why this is used
+  init?(world: World, actor: Mob): void // Runs once before update is called
+  cost(world: World, actor: Mob): number // Runs once on plan creation. Determines the cost of an action
+  update(world: World, actor: Mob): boolean // Runs every frame, does the action action. Returns whether or not the action is complete
+  done?(world: World, actor: Mob): void // Runs after the the action is complete. Can clean up state changed on the action
 }
 
+// Only used to render special data
 export interface TimeAction extends Action {
   duration: number
 }
@@ -63,6 +63,7 @@ export class MoveTo implements Action {
     return !(dist < this.minDistance)
   }
 
+  // Basic SEEK steering behavior
   update(world: World, actor: Mob): boolean {
     const dist = distance(this.position, actor.center)
     if (dist < this.minDistance) {
@@ -503,6 +504,7 @@ class Node {
       const goalHash: {[index: string]: number} = {}
       for (let child of this.children) {
         child.updateCost(world, actor)
+        // The math breaks with infinity, even though theoretically unlimited values should be supported
         if (child.cost === Infinity) break
         totalChildCost += child.cost
         if (!goalHash[child.goal]) {
@@ -519,6 +521,7 @@ class Node {
   getLowestCostChildren (world: World, actor: Mob): Node[] {
     let instructions: Node[] = []
     if (this.children.length > 0) {
+      // Gets rid of all child dupes
       let childrenNoDupes: Node[] = []
       const goalHash: {[index: string]: number} = {}
       for (let child of this.children) {
@@ -530,6 +533,8 @@ class Node {
           childrenNoDupes.push(child)
         }
       }
+
+      // Adds children in in-order traversal
       childrenNoDupes.forEach(child => {
         if (child.action.shouldDo(world, actor)) instructions.push(...child.getLowestCostChildren(world, actor))
       })

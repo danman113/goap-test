@@ -133,7 +133,7 @@ export class Person implements Living {
   }
 
   private live () {
-    const speed = 5
+    const speed = 2
     this.addHunger(-2 * speed)
     this.addThirst(-5 * speed)
     this.addFatigue(-4 * speed)
@@ -141,17 +141,16 @@ export class Person implements Living {
 
   private selectAction (world: World) {
     if (this.selectedAction === null) {
+      // Gets a new plan when when previous plan is done
       if (this.actions.length < 1) {
         if (this.planner) {
           this.actions = this.planner.getPlan('survive', world, this)
-        } else {
-          this.actions.push(new Dance())
         }
       }
 
       this.selectedAction = this.actions.shift()
+      // This forces the actor to update if the world state has changed and they can no longer do their action
       if (this.selectedAction.verify && !this.selectedAction.verify(world, this)) {
-        console.log('discarding action')
         this.actions = this.planner.getPlan('survive', world, this)
         this.selectedAction = this.actions.shift()
       }

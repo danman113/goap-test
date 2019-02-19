@@ -49,7 +49,7 @@ const planner = new actions.GOAPPlanner([
   new actions.SellWater(5),
   new actions.EatDirt(),
   new actions.ConsumeItem(5, 'food', (world: World, mob: Living) => mob.addHunger(50000)),
-  new actions.ConsumeItem(10, 'water', (world: World, mob: Living) => mob.addThirst(100000)),
+  new actions.ConsumeItem(2, 'water', (world: World, mob: Living) => mob.addThirst(100000)),
   new actions.Sleep(10),
   new actions.NeedsWater(),
   new actions.NeedsFood(),
@@ -82,7 +82,7 @@ for(let i = 0; i < 100; i++) {
   const cotton = new Person({
     position: v2(rand(-2000, 2000), rand(-2000, 2000)),
     color: randomColor,
-    name: `Bot + ${i}`,
+    name: `Bot - ${i}`,
     planner
   })
   world.pushMob(cotton)
